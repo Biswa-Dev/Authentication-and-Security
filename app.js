@@ -7,7 +7,7 @@ const mongoose = require('mongoose');
 const session = require('express-session');
 const passport = require('passport');
 const passportLocalMongoose = require('passport-local-mongoose');
-const e = require('express');
+const express = require('express');
 const port = process.env.PORT || 3000;
 
 
