@@ -7,7 +7,9 @@ const mongoose = require('mongoose');
 const session = require('express-session');
 const passport = require('passport');
 const passportLocalMongoose = require('passport-local-mongoose');
-const express = require('express');
+const GoogleStrategy = require('passport-google-oauth20').Strategy;
+const FacebookStrategy = require('passport-facebook').Strategy;
+const findOrCreate = require('mongoose-findorcreate');
 const port = process.env.PORT || 3000;
 
 
@@ -38,11 +40,15 @@ mongoose.connect("mongodb://localhost:27017/userDB",{
 //User Schema for email and password
 const userSchema = new mongoose.Schema({
     email: String,
-    password: String
+    password: String,
+    googleId: String,
+    facebookId: String
 });
 
 //adding passport-local-mongoose as plugin to userSchema
 userSchema.plugin(passportLocalMongoose);
+//adding findorcreate as a plugin to userSchema
+userSchema.plugin(findOrCreate);
 
 //creating model
 const User = new mongoose.model("User",userSchema);
@@ -50,8 +56,44 @@ const User = new mongoose.model("User",userSchema);
 //using the plugin to create strategy to authenticate user
 passport.use(User.createStrategy());
 //to create and crumble cookies using serialize and deserialize
-passport.serializeUser(User.serializeUser());
-passport.deserializeUser(User.deserializeUser());
+passport.serializeUser(function(user, done) {
+    done(null, user.id);
+});
+  
+passport.deserializeUser(function(id, done) {
+User.findById(id, function(err, user) {
+    done(err, user);
+});
+});
+
+//setting up our GoogleStrategy for authentication with google
+passport.use(new GoogleStrategy({
+    clientID: process.env.CLIENT_ID,
+    clientSecret: process.env.CLIENT_SECRET,
+    callbackURL: "http://localhost:3000/auth/google/secrets",
+    userProfileURL: "https://www.googleapis.com/oauth2/v3/userinfo"
+  },
+  function(accessToken, refreshToken, profile, cb) {
+    console.log(profile);
+    //remember before using findOrCreate just install mongoose-findorcreate and use it
+    User.findOrCreate({ googleId: profile.id }, function (err, user) {
+      return cb(err, user);
+    });
+  }
+));
+//setting up our FacebookStrategy for authentication with facebook
+passport.use(new FacebookStrategy({
+    clientID: process.env.FACEBOOK_APP_ID,
+    clientSecret: process.env.FACEBOOK_APP_SECRET,
+    callbackURL: "http://localhost:3000/auth/facebook/secrets"
+  },
+  function(accessToken, refreshToken, profile, cb) {
+    console.log(profile);
+    User.findOrCreate({ facebookId: profile.id }, function (err, user) {
+      return cb(err, user);
+    });
+  }
+));
 
 //get method for home route
 app.get("/",function(req,res){
@@ -64,6 +106,28 @@ app.get("/register",function(req,res){
 //get method for login route
 app.get("/login",function(req,res){
     res.render('login');
+});
+//get method when user wants to login or register with google
+app.get('/auth/google',
+  passport.authenticate('google', { scope: ['profile'] })
+);
+//authenticate request
+app.get('/auth/google/secrets', 
+  passport.authenticate('google', { failureRedirect: '/login' }),
+  function(req, res) {
+    // Successful authentication, redirect home.
+    res.redirect('/secrets');
+});
+//get method when user wants to login or register with facebook
+app.get('/auth/facebook',
+  passport.authenticate('facebook')
+);
+//get method for Redirect URI Validator
+app.get('/auth/facebook/secrets',
+  passport.authenticate('facebook', { failureRedirect: '/login' }),
+  function(req, res) {
+    // Successful authentication, redirect home.
+    res.redirect('/secrets');
 });
 //get method for secrets route
 app.get("/secrets",function(req,res){
